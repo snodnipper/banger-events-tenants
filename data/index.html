@@ -367,19 +367,36 @@ function renderStandardSchedule(guestId) {
 }
 
 function renderExperienceSchedule(guestId) {
+  // 1) figure out which guestTypeId to use:
+  //    if this guest has a primaryGuestId, use that primary's guestTypeId
+  const info = db.exec(`
+    SELECT guestTypeId, primaryGuestId
+      FROM Guest
+     WHERE id='${guestId}'
+  `)[0].values[0];
+  let [ownGTypeId, primaryId] = info;
+  if (primaryId) {
+    ownGTypeId = db.exec(`
+      SELECT guestTypeId
+        FROM Guest
+       WHERE id='${primaryId}'
+    `)[0].values[0][0];
+  }
+
+  // 2) pull all experiences for that guest-type + ticket validity
   const rows = db.exec(`
-    SELECT e.dateTime,e.description
+    SELECT e.dateTime, e.description
       FROM Experience e
       JOIN TicketValidity tv
-        ON tv.date=substr(e.dateTime,1,10)
-     WHERE e.guestTypeId=(
-       SELECT guestTypeId FROM Guest WHERE id='${guestId}'
-     )
-       AND tv.ticketTypeId=(
-       SELECT ticketTypeId FROM Guest WHERE id='${guestId}'
-     )
+        ON tv.date = substr(e.dateTime,1,10)
+     WHERE e.guestTypeId = '${ownGTypeId}'
+       AND tv.ticketTypeId = (
+         SELECT ticketTypeId FROM Guest WHERE id='${guestId}'
+       )
      ORDER BY e.dateTime
-  `)[0]?.values||[];
+  `)[0]?.values || [];
+
+  // 3) render exactly as before
   let html = `<h2>Extra Experiences</h2>
     <table><tr><th>Date/Time</th><th>Description</th></tr>`;
   rows.forEach(([dt,desc])=>{
