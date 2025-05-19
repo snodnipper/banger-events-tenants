@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Canadian GP 2025: Guest Itinerary (SQL Powered)</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.6.2/sql-wasm.js"></script>
+  <style>
+    body { font-family: sans-serif; padding: 2rem; }
+    select, input, button { margin-bottom: 1rem; padding: 0.5rem; }
+    table { border-collapse: collapse; width: 100%; margin-top: 1rem; }
+    th, td { border: 1px solid #ccc; padding: 0.5rem; text-align: left; }
+    th { background-color: #f0f0f0; }
+    h2 { margin-top: 2rem; }
+    .card { margin-top: 2rem; padding: 1rem; background: #f9f9f9; border: 1px solid #ccc; }
+    .options-container label { margin-right: 1rem; }
+  </style>
+</head>
+<body>
+  <h1>Canadian GP 2025: Guest Itinerary (SQL Powered)</h1>
+
+  <!-- Guest selector & details -->
+  <label for="guestSelect">Select Guest:</label>
+  <select id="guestSelect"></select>
+  <div class="card" id="guestDetails"></div>
+  <div id="standardSchedule"></div>
+  <div id="experienceItinerary"></div>
+
+  <!-- Create New Ticket Type -->
+  <h2>Create New Ticket Type</h2>
+  <select id="ticketTemplate" onchange="populateTicketFields()">
+    <option value="">-- Select Ticket Example --</option>
+    <option value="ticket01|3-Day Pass (13–15 June)|2025-06-13,2025-06-14,2025-06-15">
+      3-Day Pass (13–15 June)
+    </option>
+    <option value="ticket04|Mixed Day 1 & 3 Pass|2025-06-13,2025-06-15">
+      Mixed Day 1 & 3 Pass
+    </option>
+    <option value="ticket03|Day 2 Pass (14 June)|2025-06-14">
+      Day 2 Pass (14 June)
+    </option>
+  </select><br>
+  <input type="text" id="newTicketId" placeholder="Ticket ID (optional)" />
+  <input type="text" id="newTicketName" placeholder="Ticket Name" />
+  <input type="text" id="newTicketDates" placeholder="Valid Dates (YYYY-MM-DD, comma-separated)" />
+  <button onclick="addTicketType()">Add Ticket Type</button>
+
+  <!-- Create New Experience -->
+  <h2>Create New Experience</h2>
+  <select id="expTemplate" onchange="populateExperienceFields()">
+    <option value="">-- Select Experience Example --</option>
+    <option value="Meet & Greet|2025-06-13T12:30|guestType01">
+      Driver Meet & Greet (13 June, 12:30)
+    </option>
+    <option value="Paddock Club Tour|2025-06-13T15:40|guestType02">
+      Paddock Club Tour (13 June, 15:40)
+    </option>
+    <option value="Pit Lane Walk|2025-06-13T20:00|guestType01">
+      Pit Lane Walk (VIP, 13 June, 20:00)
+    </option>
+    <option value="Hydrotherapy Session|2025-06-14T09:15|guestType03">
+      Hydrotherapy for +1 (14 June, 09:15)
+    </option>
+    <option value="Grid Walk|2025-06-15T12:05|guestType02">
+      Grid Walk (General, 15 June, 12:05)
+    </option>
+  </select><br>
+  <input type="text" id="expDescription" placeholder="Experience Description" />
+  <input type="datetime-local" id="expDateTime" />
+  <select id="expGuestType"></select>
+  <button onclick="addExperience()">Add Experience</button>
+
+  <!-- Create New Guest -->
+  <h2>Create New Guest</h2>
+  <select id="guestTemplate" onchange="populateGuestFields()">
+    <option value="">-- Select Guest Example --</option>
+    <option value="guest04|Daisy Miller|daisy@example.com|ticket02|sector02|guestType02|">
+      Daisy Miller (General Day 2)
+    </option>
+    <option value="guest05|Eve Adams|eve@example.com|ticket01|sector01|guestType01|">
+      Eve Adams (VIP)
+    </option>
+    <option value="guest06|Frank Lewis|frank@corp.com|ticket01|sector01|guestType01|">
+      Frank Lewis (VIP)
+    </option>
+    <option value="guest07|Grace Chan|grace@asia.com|ticket02|sector02|guestType02|">
+      Grace Chan (General Day 2)
+    </option>
+    <option value="guest08|Hank Brooks|hank@motorsport.com|ticket01|sector01|guestType03|">
+      Hank Brooks (+1)
+    </option>
+  </select><br>
+  <input type="text" id="newGuestId" placeholder="Guest ID (optional)" />
+  <input type="text" id="newGuestName" placeholder="Name" />
+  <input type="email" id="newGuestEmail" placeholder="Email" />
+  <select id="newGuestTicketType"></select>
+  <select id="newGuestSector"></select>
+  <select id="newGuestGuestType" onchange="renderGuestOptions(this.value)"></select>
+  <div id="newGuestOptionsContainer" class="options-container"></div>
+  <input type="text" id="newGuestPrimary" placeholder="Primary Guest ID (for +1)" />
+  <button onclick="addGuest()">Add Guest</button>
+
+  <!-- Create New Sector -->
+  <h2>Create New Sector</h2>
+  <select id="sectorTemplate" onchange="populateSectorFields()">
+    <option value="">-- Select Sector Example --</option>
+    <option value="sector01|Europe">Europe</option>
+    <option value="sector02|Asia Pacific">Asia Pacific</option>
+    <option value="sector03|Americas">Americas</option>
+    <option value="sector04|Middle East">Middle East</option>
+    <option value="sector05|Africa">Africa</option>
+  </select><br>
+  <input type="text" id="newSectorId" placeholder="Sector ID (optional)" />
+  <input type="text" id="newSectorName" placeholder="Sector Name" />
+  <button onclick="addSector()">Add Sector</button>
+
+  <!-- Define New Guest Type -->
+  <h2>Define New Guest Type</h2>
+  <select id="guestTypeTemplate" onchange="populateGuestTypeFields()">
+    <option value="">-- Select Guest Type Example --</option>
+    <option value="Big Boss VIP|request_transport,request_accommodation,private_jet">
+      Big Boss VIP
+    </option>
+    <option value="Super Supporter|meet_driver,garage_tour">Super Supporter</option>
+    <option value="Team Manager|request_transport,private_meeting">Team Manager</option>
+    <option value="Press|press_pass,interview_slot">Press</option>
+    <option value="Charity Guest|parking,meal_voucher">Charity Guest</option>
+  </select><br>
+  <input type="text" id="newGuestTypeName" placeholder="Guest Type Name" />
+  <input type="text" id="newGuestTypeOptions" placeholder="Options (comma-separated)" />
+  <button onclick="addGuestType()">Add Guest Type</button>
+
+  <!-- Create New Standard Schedule Entry -->
+  <h2>Create New Standard Schedule Entry</h2>
+  <select id="stdScheduleTemplate" onchange="populateScheduleFields()">
+    <option value="">-- Select Schedule Example --</option>
+    <option value="2025-06-13T21:00|Winner Interview (Post-Race)">Winner Interview (13 June, 21:00)</option>
+    <option value="2025-06-14T20:00|Podium Ceremony">Podium Ceremony (14 June, 20:00)</option>
+    <option value="2025-06-15T15:50|Victory Lap">Victory Lap (15 June, 15:50)</option>
+  </select><br>
+  <input type="datetime-local" id="newScheduleDateTime" />
+  <input type="text" id="newScheduleDescription" placeholder="Description" />
+  <button onclick="addStandardSchedule()">Add to Standard Schedule</button>
+
+  <!-- Download Database -->
+  <h2>Download Database</h2>
+  <button onclick="downloadDB()">Download SQLite DB</button>
+
+<script>
+let db;
+
+async function init() {
+  const SQL = await initSqlJs({
+    locateFile: file => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.6.2/${file}`
+  });
+  db = new SQL.Database();
+
+  // Schema
+  db.run(`
+    CREATE TABLE GuestType(id TEXT PRIMARY KEY, name TEXT, options TEXT);
+    CREATE TABLE Sector(id TEXT PRIMARY KEY, name TEXT);
+    CREATE TABLE TicketType(id TEXT PRIMARY KEY, name TEXT);
+    CREATE TABLE TicketValidity(ticketTypeId TEXT, date TEXT);
+    CREATE TABLE Guest(
+      id TEXT PRIMARY KEY, name TEXT, email TEXT,
+      ticketTypeId TEXT, sectorId TEXT, guestTypeId TEXT,
+      primaryGuestId TEXT, options TEXT
+    );
+    CREATE TABLE StandardSchedule(dateTime TEXT, description TEXT);
+    CREATE TABLE Experience(
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      guestTypeId TEXT, dateTime TEXT, description TEXT
+    );
+  `);
+
+  // Seed initial data
+  db.run(`INSERT INTO GuestType VALUES
+    ('guestType01','VIP','request_accommodation,request_transport'),
+    ('guestType02','General',''),
+    ('guestType03','+1','plus_1')
+  `);
+
+  db.run(`INSERT INTO Sector VALUES
+    ('sector01','Europe'),
+    ('sector02','Asia Pacific'),
+    ('sector03','Americas'),
+    ('sector04','Middle East'),
+    ('sector05','Africa')
+  `);
+
+  db.run(`INSERT INTO TicketType VALUES
+    ('ticket01','3-Day Pass (13–15 June)'),
+    ('ticket02','Day 2 Pass (14 June)'),
+    ('ticket03','Day 3 Pass (15 June)')
+  `);
+
+  db.run(`INSERT INTO TicketValidity VALUES
+    ('ticket01','2025-06-13'),
+    ('ticket01','2025-06-14'),
+    ('ticket01','2025-06-15'),
+    ('ticket02','2025-06-14'),
+    ('ticket03','2025-06-15')
+  `);
+
+  db.run(`INSERT INTO Guest VALUES
+    ('guest01','Alice Freeman','alice@ukfans.com','ticket01','sector01','guestType01',NULL,NULL),
+    ('guest02','Bob Wang','bob@asiafans.com','ticket02','sector02','guestType02',NULL,NULL),
+    ('guest03','Charlie Guest','charlie@ukfans.com','ticket01','sector01','guestType03','guest01',NULL)
+  `);
+
+  db.run(`INSERT INTO StandardSchedule VALUES
+    ('2025-06-13T10:00','Porsche Carrera Cup North America - First Practice Session'),
+    ('2025-06-13T11:05','F1 Academy - Practice Session'),
+    ('2025-06-13T12:00','FIA - F1 Car Presentation'),
+    ('2025-06-13T12:00','Paddock Club - Pit Lane Walk'),
+    ('2025-06-13T12:00','Paddock Club - Track Tour'),
+    ('2025-06-13T13:30','Formula 1 - First Practice Session'),
+    ('2025-06-13T15:00','Porsche Carrera Cup North America - Second Practice Session'),
+    ('2025-06-13T15:30','Formula 1 - Teams'' Press Conference'),
+    ('2025-06-13T15:40','Paddock Club - Track Tour'),
+    ('2025-06-13T15:40','Paddock Club - Pit Lane Walk'),
+    ('2025-06-13T17:00','Formula 1 - Second Practice Session'),
+    ('2025-06-13T18:30','F1 Academy - Qualifying Session'),
+    ('2025-06-13T19:15','F1 Experiences - Track Tour & Photo'),
+    ('2025-06-13T20:00','F1 Experiences - Pit Lane Walk'),
+    ('2025-06-14T09:15','F1 Academy - First Race'),
+    ('2025-06-14T10:25','Porsche Carrera Cup North America - Qualifying Session'),
+    ('2025-06-14T11:15','Formula 1 - Team Pit Stop Practice'),
+    ('2025-06-14T11:15','Paddock Club - Track Tour'),
+    ('2025-06-14T11:15','Paddock Club - Pit Lane Walk'),
+    ('2025-06-14T12:30','Formula 1 - Third Practice Session'),
+    ('2025-06-14T13:40','Paddock Club - Track Tour'),
+    ('2025-06-14T13:40','Paddock Club - Pit Lane Walk'),
+    ('2025-06-14T14:50','F1 Academy - Second Race'),
+    ('2025-06-14T16:00','Formula 1 - Qualifying Session'),
+    ('2025-06-14T17:00','Formula 1 - Press Conference'),
+    ('2025-06-14T18:00','Porsche Carrera Cup North America - Race'),
+    ('2025-06-14T19:00','F1 Experiences - Grid Walk & Photo'),
+    ('2025-06-15T09:25','Porsche Carrera Cup North America - Race'),
+    ('2025-06-15T10:55','F1 Academy - Third Race'),
+    ('2025-06-15T11:55','Paddock Club - Pit Lane Walk'),
+    ('2025-06-15T11:55','Paddock Club - Track Tour'),
+    ('2025-06-15T12:00','Formula 1 - Drivers'' Parade'),
+    ('2025-06-15T13:44','Formula 1 - National Anthem'),
+    ('2025-06-15T14:00','Formula 1 - GRAND PRIX')
+  `);
+
+  db.run(`INSERT INTO Experience (guestTypeId, dateTime, description) VALUES
+    ('guestType01','2025-06-13T12:30','Meet & Greet with Drivers'),
+    ('guestType02','2025-06-13T15:40','Paddock Club Tour'),
+    ('guestType01','2025-06-13T20:00','VIP Pit Lane Walk'),
+    ('guestType03','2025-06-14T09:15','Hydrotherapy for +1'),
+    ('guestType01','2025-06-14T13:00','VIP Paddock Club Lunch'),
+    ('guestType02','2025-06-14T14:00','Team Photo Session'),
+    ('guestType02','2025-06-15T12:05','General Grid Walk'),
+    ('guestType01','2025-06-15T09:00','Rooftop Brunch VIP'),
+    ('guestType03','2025-06-15T10:00','Guest +1 Morning Coffee')
+  `);
+
+  // Initial renders
+  renderGuestSelect();
+  renderDropdown('newGuestTicketType','TicketType', true);
+  renderDropdown('newGuestSector','Sector', true);
+  renderGuestTypeOptions();
+  renderDropdown('newGuestGuestType','GuestType', true);
+  renderDropdown('sectorTemplate','Sector', true, (id, name) => `${id}|${name}`);
+  renderGuestUI('guest01');
+}
+
+function renderDropdown(elementId, table, includeEmpty=false, valueFormatter = null) {
+  const stmt = db.prepare(`SELECT id, name FROM ${table} ORDER BY name`);
+  let rows = [];
+  while(stmt.step()) rows.push(stmt.getAsObject());
+  stmt.free();
+  let opts = includeEmpty ? `<option value="">-- Select --</option>` : '';
+  opts += rows.map(r => {
+    const val = valueFormatter ? valueFormatter(r.id, r.name) : r.id;
+    return `<option value="${val}">${r.name}</option>`;
+  }).join('');
+  document.getElementById(elementId).innerHTML = opts;
+}
+
+function renderGuestSelect() {
+  const data = db.exec("SELECT id,name,guestTypeId FROM Guest ORDER BY name")[0].values;
+  document.getElementById('guestSelect').innerHTML =
+    data.map(([id,name,gt])=>`<option value="${id}">${name} (${gt})</option>`).join('');
+  document.getElementById('guestSelect').onchange = e =>
+    renderGuestUI(e.target.value);
+}
+
+function renderGuestTypeOptions() {
+  const data = db.exec("SELECT id,name FROM GuestType ORDER BY name")[0].values;
+  document.getElementById('expGuestType').innerHTML =
+    data.map(([id,name])=>`<option value="${id}">${name}</option>`).join('');
+}
+
+function renderGuestOptions(guestTypeId) {
+  const result = db.exec(`SELECT options FROM GuestType WHERE id='${guestTypeId}'`);
+  const container = document.getElementById('newGuestOptionsContainer');
+  container.innerHTML = '';
+  if (!result.length) return;
+  const opts = result[0].values[0][0];
+  if (!opts) return;
+  opts.split(',').filter(Boolean).forEach(opt=>{
+    const label = opt.replace(/_/g,' ');
+    container.innerHTML += `
+      <div>
+        <label for="opt_${opt}">${label}:</label>
+        <input type="text" id="opt_${opt}" placeholder="Enter ${label.toLowerCase()}" />
+      </div>`;
+  });
+}
+
+function renderGuestUI(guestId) {
+  const res = db.exec(`
+    SELECT g.name,g.email,t.name,s.name,gt.name,g.options,pg.name
+    FROM Guest g
+      JOIN TicketType t ON g.ticketTypeId=t.id
+      JOIN Sector s ON g.sectorId=s.id
+      JOIN GuestType gt ON g.guestTypeId=gt.id
+      LEFT JOIN Guest pg ON g.primaryGuestId=pg.id
+    WHERE g.id='${guestId}'
+  `)[0].values[0];
+  const [name,email,ticket,sector,gtype,gopts,pg] = res;
+  const optsDisplay = gopts
+    ? gopts.split(',').map(x=>x.split(':')[1]).join(', ')
+    : '';
+  document.getElementById('guestDetails').innerHTML = `
+    <h2>Guest Info</h2>
+    <p><strong>Name:</strong> ${name}</p>
+    <p><strong>Email:</strong> ${email}</p>
+    <p><strong>Ticket Type:</strong> ${ticket}</p>
+    <p><strong>Sector:</strong> ${sector}</p>
+    <p><strong>Guest Type:</strong> ${gtype}</p>
+    ${pg?`<p><strong>Accompanies:</strong> ${pg}</p>`:''}
+    ${optsDisplay?`<p><strong>Options:</strong> ${optsDisplay}</p>`:''}
+  `;
+  renderStandardSchedule(guestId);
+  renderExperienceSchedule(guestId);
+}
+
+function renderStandardSchedule(guestId) {
+  const validDates = db.exec(`
+    SELECT date
+      FROM TicketValidity
+     WHERE ticketTypeId=(
+       SELECT ticketTypeId FROM Guest WHERE id='${guestId}'
+     )
+  `)[0].values.flat();
+  const all = db.exec(`
+    SELECT dateTime,description
+      FROM StandardSchedule
+     ORDER BY dateTime
+  `)[0].values;
+  let html = `<h2>Standard Grand Prix Schedule</h2>
+    <table><tr><th>Date/Time</th><th>Description</th></tr>`;
+  all.forEach(([dt,desc])=>{
+    if (validDates.includes(dt.split('T')[0])) {
+      html += `<tr>
+        <td>${new Date(dt).toLocaleString()}</td>
+        <td>${desc}</td>
+      </tr>`;
+    }
+  });
+  html += `</table>`;
+  document.getElementById('standardSchedule').innerHTML = html;
+}
+
+function renderExperienceSchedule(guestId) {
+  const rows = db.exec(`
+    SELECT e.dateTime,e.description
+      FROM Experience e
+      JOIN TicketValidity tv
+        ON tv.date=substr(e.dateTime,1,10)
+     WHERE e.guestTypeId=(
+       SELECT guestTypeId FROM Guest WHERE id='${guestId}'
+     )
+       AND tv.ticketTypeId=(
+       SELECT ticketTypeId FROM Guest WHERE id='${guestId}'
+     )
+     ORDER BY e.dateTime
+  `)[0]?.values||[];
+  let html = `<h2>Extra Experiences</h2>
+    <table><tr><th>Date/Time</th><th>Description</th></tr>`;
+  rows.forEach(([dt,desc])=>{
+    html += `<tr>
+      <td>${new Date(dt).toLocaleString()}</td>
+      <td>${desc}</td>
+    </tr>`;
+  });
+  html += `</table>`;
+  document.getElementById('experienceItinerary').innerHTML = html;
+}
+
+function populateExperienceFields() {
+  const [desc, dt, gt] = document.getElementById('expTemplate').value.split('|');
+  document.getElementById('expDescription').value = desc || '';
+  document.getElementById('expDateTime').value    = dt   || '';
+  document.getElementById('expGuestType').value   = gt   || '';
+}
+
+function populateTicketFields() {
+  const [id,name,dates] = document.getElementById('ticketTemplate').value.split('|');
+  document.getElementById('newTicketId').value    = id   || '';
+  document.getElementById('newTicketName').value  = name || '';
+  document.getElementById('newTicketDates').value = dates|| '';
+}
+
+function populateGuestFields() {
+  const [id,name,email,ticket,sector,gt,primary] = document.getElementById('guestTemplate').value.split('|');
+  document.getElementById('newGuestId').value         = id     || '';
+  document.getElementById('newGuestName').value       = name   || '';
+  document.getElementById('newGuestEmail').value      = email  || '';
+  document.getElementById('newGuestTicketType').value = ticket || '';
+  document.getElementById('newGuestSector').value     = sector || '';
+  document.getElementById('newGuestGuestType').value  = gt     || '';
+  renderGuestOptions(gt);
+  document.getElementById('newGuestPrimary').value    = primary|| '';
+}
+
+function populateSectorFields() {
+  const tmpl = document.getElementById('sectorTemplate').value;
+  if (!tmpl) {
+    document.getElementById('newSectorId').value   = '';
+    document.getElementById('newSectorName').value = '';
+    return;
+  }
+  const [id,name] = tmpl.split('|');
+  document.getElementById('newSectorId').value   = id   || '';
+  document.getElementById('newSectorName').value = name || '';
+}
+
+function populateGuestTypeFields() {
+  const [name,opts] = document.getElementById('guestTypeTemplate').value.split('|');
+  document.getElementById('newGuestTypeName').value    = name || '';
+  document.getElementById('newGuestTypeOptions').value = opts || '';
+}
+
+function populateScheduleFields() {
+  const [dt, desc] = document.getElementById('stdScheduleTemplate').value.split('|');
+  document.getElementById('newScheduleDateTime').value    = dt   || '';
+  document.getElementById('newScheduleDescription').value = desc || '';
+}
+
+function addTicketType() {
+  let id = document.getElementById('newTicketId').value.trim();
+  if (!id) id = `ticket_${Math.random().toString(36).substr(2,8)}`;
+  const name = document.getElementById('newTicketName').value.trim();
+  const dates = document.getElementById('newTicketDates').value.trim().split(',').map(d=>d.trim()).filter(Boolean);
+  if (!name || !dates.length) return alert('Ticket name and dates required');
+  db.run(`INSERT INTO TicketType(id,name) VALUES(?,?)`, [id,name]);
+  dates.forEach(d=> db.run(`INSERT INTO TicketValidity(ticketTypeId,date) VALUES(?,?)`, [id,d]));
+  renderDropdown('newGuestTicketType','TicketType', true);
+  document.getElementById('ticketTemplate').value   = '';
+  document.getElementById('newTicketId').value     = '';
+  document.getElementById('newTicketName').value   = '';
+  document.getElementById('newTicketDates').value  = '';
+}
+
+function addExperience() {
+  const desc = document.getElementById('expDescription').value.trim();
+  const dt   = document.getElementById('expDateTime').value;
+  const gt   = document.getElementById('expGuestType').value;
+  if (!desc || !dt || !gt) return alert('All fields required');
+  db.run(`INSERT INTO Experience(guestTypeId,dateTime,description) VALUES(?,?,?)`, [gt,dt,desc]);
+  renderExperienceSchedule(document.getElementById('guestSelect').value);
+  document.getElementById('expTemplate').value    = '';
+  document.getElementById('expDescription').value = '';
+  document.getElementById('expDateTime').value    = '';
+  document.getElementById('expGuestType').value   = 'guestType01';
+}
+
+function addGuest() {
+  let id    = document.getElementById('newGuestId').value.trim();
+  if (!id) id = `guest_${Math.random().toString(36).slice(2,8)}`;
+  const name   = document.getElementById('newGuestName').value.trim();
+  const email  = document.getElementById('newGuestEmail').value.trim();
+  const ticket = document.getElementById('newGuestTicketType').value;
+  const sector = document.getElementById('newGuestSector').value;
+  const gt     = document.getElementById('newGuestGuestType').value;
+  const primary= document.getElementById('newGuestPrimary').value.trim() || null;
+  let optsArr  = [];
+  const row    = db.exec(`SELECT options FROM GuestType WHERE id='${gt}'`);
+  if (row.length) {
+    row[0].values[0][0].split(',').filter(Boolean).forEach(opt=>{
+      const inp = document.getElementById(`opt_${opt}`);
+      if (inp && inp.value.trim()) optsArr.push(`${opt}:${inp.value.trim()}`);
+    });
+  }
+  const opts = optsArr.join(',');
+  if (!name || !email || !ticket || !sector || !gt) return alert('All fields required');
+  db.run(`
+    INSERT INTO Guest(id,name,email,ticketTypeId,sectorId,guestTypeId,primaryGuestId,options)
+    VALUES(?,?,?,?,?,?,?,?)
+  `, [id,name,email,ticket,sector,gt,primary,opts]);
+  renderGuestSelect();
+  document.getElementById('guestSelect').value = id;
+  renderGuestUI(id);
+  document.getElementById('guestTemplate').value   = '';
+  document.getElementById('newGuestId').value      = '';
+  document.getElementById('newGuestName').value    = '';
+  document.getElementById('newGuestEmail').value   = '';
+  document.getElementById('newGuestSector').value  = '';
+  document.getElementById('newGuestPrimary').value = '';
+  document.getElementById('newGuestOptionsContainer').innerHTML = '';
+}
+
+function addGuestType() {
+  const name = document.getElementById('newGuestTypeName').value.trim();
+  const opts = document.getElementById('newGuestTypeOptions').value.trim();
+  if (!name) return alert('Guest type name required');
+  const id = `guestType_${Math.random().toString(36).slice(2,8)}`;
+  db.run(`INSERT INTO GuestType(id,name,options) VALUES(?,?,?)`, [id,name,opts]);
+  renderGuestTypeOptions();
+  renderDropdown('newGuestGuestType','GuestType', true);
+  document.getElementById('guestTypeTemplate').value     = '';
+  document.getElementById('newGuestTypeName').value      = '';
+  document.getElementById('newGuestTypeOptions').value   = '';
+}
+
+function addSector() {
+  let id = document.getElementById('newSectorId').value.trim();
+  if (!id) id = `sector_${Math.random().toString(36).substr(2,8)}`;
+  const name = document.getElementById('newSectorName').value.trim();
+  if (!name) return alert('Sector name required');
+  db.run(`INSERT INTO Sector(id,name) VALUES(?,?)`, [id,name]);
+  renderDropdown('newGuestSector','Sector', true);
+  renderDropdown('sectorTemplate','Sector', true, (i,n)=>`${i}|${n}`);
+  document.getElementById('sectorTemplate').value   = '';
+  document.getElementById('newSectorId').value     = '';
+  document.getElementById('newSectorName').value   = '';
+}
+
+function addStandardSchedule() {
+  const dt   = document.getElementById('newScheduleDateTime').value;
+  const desc = document.getElementById('newScheduleDescription').value.trim();
+  if (!dt || !desc) return alert('Date/time and description required');
+  db.run(`INSERT INTO StandardSchedule(dateTime,description) VALUES(?,?)`, [dt,desc]);
+  renderStandardSchedule(document.getElementById('guestSelect').value);
+  document.getElementById('stdScheduleTemplate').value     = '';
+  document.getElementById('newScheduleDateTime').value     = '';
+  document.getElementById('newScheduleDescription').value  = '';
+}
+
+window.addEventListener('DOMContentLoaded', init);
+
+
+/**
+ * Export and download the in-memory SQLite database.
+ */
+function downloadDB() {
+  // Export the database to a Uint8Array
+  const data = db.export();
+  // Create a Blob and object URL for download
+  const blob = new Blob([data], { type: 'application/octet-stream' });
+  const url = URL.createObjectURL(blob);
+  // Create a temporary link to trigger download
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'itinerary.sqlite';
+  a.click();
+  // Clean up the object URL
+  URL.revokeObjectURL(url);
+}
+
+</script>
+</body>
+</html>
