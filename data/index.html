@@ -8,16 +8,19 @@
   <style>
     body { font-family: sans-serif; padding: 2rem; }
     select, input, button { margin-bottom: 1rem; padding: 0.5rem; }
-    table { border-collapse: collapse; width: 100%; margin-top: 1rem; }
+    table { border-collapse: collapse; width: 100%; margin-top: 1rem; margin-bottom: 1.5rem; }
     th, td { border: 1px solid #ccc; padding: 0.5rem; text-align: left; }
     th { background-color: #f0f0f0; }
-    h2 { margin-top: 2rem; }
-    .card { margin-top: 2rem; padding: 1rem; background: #f9f9f9; border: 1px solid #ccc; }
+    h1, h2 { margin-top: 2rem; }
+    .card { margin-top: 1rem; padding: 1rem; background: #f9f9f9; border: 1px solid #ccc; }
     .options-container label { margin-right: 1rem; }
+    #ticketCapacitySummary { margin-bottom: 2rem; }
   </style>
 </head>
 <body>
   <h1>Canadian GP 2025: Guest Itinerary (SQL Powered)</h1>
+
+  <div id="ticketCapacitySummary"></div>
 
   <!-- Guest selector & details -->
   <label for="guestSelect">Select Guest:</label>
@@ -43,6 +46,7 @@
   <input type="text" id="newTicketId" placeholder="Ticket ID (optional)" />
   <input type="text" id="newTicketName" placeholder="Ticket Name" />
   <input type="text" id="newTicketDates" placeholder="Valid Dates (YYYY-MM-DD, comma-separated)" />
+  <input type="number" id="newTicketCapacity" placeholder="Capacity" min="0" /><br>
   <button onclick="addTicketType()">Add Ticket Type</button>
 
   <!-- Create New Experience -->
@@ -159,7 +163,12 @@ async function init() {
   db.run(`
     CREATE TABLE GuestType(id TEXT PRIMARY KEY, name TEXT, options TEXT);
     CREATE TABLE Sector(id TEXT PRIMARY KEY, name TEXT);
-    CREATE TABLE TicketType(id TEXT PRIMARY KEY, name TEXT);
+    CREATE TABLE TicketType(
+        id TEXT PRIMARY KEY, 
+        name TEXT, 
+        capacity INTEGER NOT NULL DEFAULT 0, 
+        remainingCapacity INTEGER NOT NULL DEFAULT 0
+    );
     CREATE TABLE TicketValidity(ticketTypeId TEXT, date TEXT);
     CREATE TABLE Guest(
       id TEXT PRIMARY KEY, name TEXT, email TEXT,
@@ -188,10 +197,12 @@ async function init() {
     ('sector05','Africa')
   `);
 
-  db.run(`INSERT INTO TicketType VALUES
-    ('ticket01','3-Day Pass (13–15 June)'),
-    ('ticket02','Day 2 Pass (14 June)'),
-    ('ticket03','Day 3 Pass (15 June)')
+  // Initial guests: guest01 (ticket01), guest02 (ticket02), guest03 (ticket01)
+  // So, ticket01 is used by 2 guests, ticket02 by 1 guest.
+  db.run(`INSERT INTO TicketType (id, name, capacity, remainingCapacity) VALUES
+    ('ticket01','3-Day Pass (13–15 June)', 100, 98), 
+    ('ticket02','Day 2 Pass (14 June)', 50, 49),
+    ('ticket03','Day 3 Pass (15 June)', 75, 75)   
   `);
 
   db.run(`INSERT INTO TicketValidity VALUES
@@ -258,133 +269,245 @@ async function init() {
   `);
 
   // Initial renders
+  renderTicketCapacitySummary();
   renderGuestSelect();
   renderDropdown('newGuestTicketType','TicketType', true);
   renderDropdown('newGuestSector','Sector', true);
-  renderGuestTypeOptions();
-  renderDropdown('newGuestGuestType','GuestType', true);
+  renderGuestTypeOptions(); // Populates expGuestType
+  renderDropdown('newGuestGuestType','GuestType', true); // Populates newGuestGuestType
   renderDropdown('sectorTemplate','Sector', true, (id, name) => `${id}|${name}`);
-  renderGuestUI('guest01');
+  if (document.getElementById('guestSelect').value) {
+    renderGuestUI(document.getElementById('guestSelect').value);
+  }
 }
 
+function renderTicketCapacitySummary() {
+  const summaryDiv = document.getElementById('ticketCapacitySummary');
+  let html = '<h2>Ticket Capacity Overview</h2>';
+  const stmt = db.prepare("SELECT name, capacity, remainingCapacity FROM TicketType ORDER BY name");
+  let ticketData = [];
+  while(stmt.step()) ticketData.push(stmt.getAsObject());
+  stmt.free();
+
+  if (ticketData.length === 0) {
+    html += '<p>No ticket types defined yet.</p>';
+  } else {
+    html += `
+      <table>
+        <thead>
+          <tr>
+            <th>Ticket Name</th>
+            <th>Total Capacity</th>
+            <th>Remaining Capacity</th>
+          </tr>
+        </thead>
+        <tbody>
+    `;
+    ticketData.forEach(ticket => {
+      html += `
+        <tr>
+          <td>${ticket.name}</td>
+          <td>${ticket.capacity}</td>
+          <td>${ticket.remainingCapacity}</td>
+        </tr>
+      `;
+    });
+    html += '</tbody></table>';
+  }
+  summaryDiv.innerHTML = html;
+}
+
+
 function renderDropdown(elementId, table, includeEmpty=false, valueFormatter = null) {
-  const stmt = db.prepare(`SELECT id, name FROM ${table} ORDER BY name`);
   let rows = [];
+  let stmt;
+  if (table === 'TicketType') {
+    stmt = db.prepare(`SELECT id, name, remainingCapacity FROM ${table} ORDER BY name`);
+  } else {
+    stmt = db.prepare(`SELECT id, name FROM ${table} ORDER BY name`);
+  }
+  
   while(stmt.step()) rows.push(stmt.getAsObject());
   stmt.free();
+
   let opts = includeEmpty ? `<option value="">-- Select --</option>` : '';
   opts += rows.map(r => {
     const val = valueFormatter ? valueFormatter(r.id, r.name) : r.id;
-    return `<option value="${val}">${r.name}</option>`;
+    let displayName = r.name;
+    if (table === 'TicketType' && typeof r.remainingCapacity === 'number') {
+      displayName += ` (Remaining: ${r.remainingCapacity})`;
+    }
+    return `<option value="${val}">${displayName}</option>`;
   }).join('');
   document.getElementById(elementId).innerHTML = opts;
 }
 
 function renderGuestSelect() {
-  const data = db.exec("SELECT id,name,guestTypeId FROM Guest ORDER BY name")[0].values;
-  document.getElementById('guestSelect').innerHTML =
-    data.map(([id,name,gt])=>`<option value="${id}">${name} (${gt})</option>`).join('');
+  const guestRes = db.exec("SELECT id,name,guestTypeId FROM Guest ORDER BY name");
+  if (guestRes.length > 0 && guestRes[0].values.length > 0) {
+    const data = guestRes[0].values;
+    document.getElementById('guestSelect').innerHTML =
+      data.map(([id,name,gt])=>`<option value="${id}">${name} (${gt})</option>`).join('');
+  } else {
+    document.getElementById('guestSelect').innerHTML = '<option value="">No Guests</option>';
+  }
   document.getElementById('guestSelect').onchange = e =>
     renderGuestUI(e.target.value);
 }
 
-function renderGuestTypeOptions() {
-  const data = db.exec("SELECT id,name FROM GuestType ORDER BY name")[0].values;
-  document.getElementById('expGuestType').innerHTML =
-    data.map(([id,name])=>`<option value="${id}">${name}</option>`).join('');
+function renderGuestTypeOptions() { // This populates the 'expGuestType' dropdown
+  const guestTypeRes = db.exec("SELECT id,name FROM GuestType ORDER BY name");
+  if (guestTypeRes.length > 0 && guestTypeRes[0].values.length > 0) {
+    document.getElementById('expGuestType').innerHTML =
+      guestTypeRes[0].values.map(([id,name])=>`<option value="${id}">${name}</option>`).join('');
+  } else {
+    document.getElementById('expGuestType').innerHTML = '<option value="">No Guest Types</option>';
+  }
 }
 
 function renderGuestOptions(guestTypeId) {
-  const result = db.exec(`SELECT options FROM GuestType WHERE id='${guestTypeId}'`);
   const container = document.getElementById('newGuestOptionsContainer');
-  container.innerHTML = '';
-  if (!result.length) return;
-  const opts = result[0].values[0][0];
-  if (!opts) return;
-  opts.split(',').filter(Boolean).forEach(opt=>{
-    const label = opt.replace(/_/g,' ');
+  container.innerHTML = ''; // Clear previous options
+  if (!guestTypeId) return; // Exit if no guest type selected
+
+  const result = db.exec(`SELECT options FROM GuestType WHERE id='${guestTypeId}'`);
+  if (!result.length || !result[0].values.length || !result[0].values[0][0]) return;
+  
+  const optsStr = result[0].values[0][0];
+  optsStr.split(',').filter(Boolean).forEach(opt=>{
+    const label = opt.replace(/_/g,' ').replace(/\b\w/g, l => l.toUpperCase());
     container.innerHTML += `
       <div>
         <label for="opt_${opt}">${label}:</label>
-        <input type="text" id="opt_${opt}" placeholder="Enter ${label.toLowerCase()}" />
+        <input type="text" id="opt_${opt}" name="opt_${opt}" placeholder="Enter ${label.toLowerCase()}" />
       </div>`;
   });
 }
 
 function renderGuestUI(guestId) {
-  const res = db.exec(`
-    SELECT g.name,g.email,t.name,s.name,gt.name,g.options,pg.name
+  const guestQuery = db.prepare(`
+    SELECT g.name AS guestName, g.email AS guestEmail, 
+           t.name AS ticketName, t.capacity AS ticketCapacity, t.remainingCapacity AS ticketRemaining,
+           s.name AS sectorName, gt.name AS guestTypeName, 
+           g.options AS guestOptions, pg.name AS primaryGuestName
     FROM Guest g
       JOIN TicketType t ON g.ticketTypeId=t.id
       JOIN Sector s ON g.sectorId=s.id
       JOIN GuestType gt ON g.guestTypeId=gt.id
       LEFT JOIN Guest pg ON g.primaryGuestId=pg.id
-    WHERE g.id='${guestId}'
-  `)[0].values[0];
-  const [name,email,ticket,sector,gtype,gopts,pg] = res;
-  const optsDisplay = gopts
-    ? gopts.split(',').map(x=>x.split(':')[1]).join(', ')
+    WHERE g.id = ?
+  `);
+  guestQuery.bind([guestId]);
+  
+  if (!guestQuery.step()) {
+    guestQuery.free();
+    document.getElementById('guestDetails').innerHTML = `<p>Guest not found.</p>`;
+    document.getElementById('standardSchedule').innerHTML = '';
+    document.getElementById('experienceItinerary').innerHTML = '';
+    return;
+  }
+  const guestData = guestQuery.getAsObject();
+  guestQuery.free();
+
+  const { guestName, guestEmail, ticketName, ticketCapacity, ticketRemaining, sectorName, guestTypeName, guestOptions, primaryGuestName } = guestData;
+  
+  const optsDisplay = guestOptions
+    ? guestOptions.split(',').filter(Boolean).map(optPair => {
+        const [key, val] = optPair.split(':', 2);
+        return `${key.replace(/_/g,' ').replace(/\b\w/g, l => l.toUpperCase())}: ${val || ''}`;
+      }).join('<br>')
     : '';
+
   document.getElementById('guestDetails').innerHTML = `
     <h2>Guest Info</h2>
-    <p><strong>Name:</strong> ${name}</p>
-    <p><strong>Email:</strong> ${email}</p>
-    <p><strong>Ticket Type:</strong> ${ticket}</p>
-    <p><strong>Sector:</strong> ${sector}</p>
-    <p><strong>Guest Type:</strong> ${gtype}</p>
-    ${pg?`<p><strong>Accompanies:</strong> ${pg}</p>`:''}
-    ${optsDisplay?`<p><strong>Options:</strong> ${optsDisplay}</p>`:''}
+    <p><strong>Name:</strong> ${guestName}</p>
+    <p><strong>Email:</strong> ${guestEmail}</p>
+    <p><strong>Ticket Type:</strong> ${ticketName} (Capacity: ${ticketCapacity}, Remaining: ${ticketRemaining})</p>
+    <p><strong>Sector:</strong> ${sectorName}</p>
+    <p><strong>Guest Type:</strong> ${guestTypeName}</p>
+    ${primaryGuestName ? `<p><strong>Accompanies:</strong> ${primaryGuestName}</p>` : ''}
+    ${optsDisplay ? `<p><strong>Options:</strong><br>${optsDisplay}</p>` : ''}
   `;
   renderStandardSchedule(guestId);
   renderExperienceSchedule(guestId);
 }
 
 function renderStandardSchedule(guestId) {
-  const validDates = db.exec(`
+  const validDatesRes = db.exec(`
     SELECT date
       FROM TicketValidity
      WHERE ticketTypeId=(
        SELECT ticketTypeId FROM Guest WHERE id='${guestId}'
      )
-  `)[0].values.flat();
-  const all = db.exec(`
+  `);
+  if (!validDatesRes.length || !validDatesRes[0].values.length) {
+      document.getElementById('standardSchedule').innerHTML = '<h2>Standard Grand Prix Schedule</h2><p>No ticket validity dates found for this guest.</p>';
+      return;
+  }
+  const validDates = validDatesRes[0].values.flat();
+
+  const allScheduleRes = db.exec(`
     SELECT dateTime,description
       FROM StandardSchedule
      ORDER BY dateTime
-  `)[0].values;
+  `);
+    if (!allScheduleRes.length || !allScheduleRes[0].values.length) {
+      document.getElementById('standardSchedule').innerHTML = '<h2>Standard Grand Prix Schedule</h2><p>No standard schedule entries.</p>';
+      return;
+  }
+  const all = allScheduleRes[0].values;
+
   let html = `<h2>Standard Grand Prix Schedule</h2>
-    <table><tr><th>Date/Time</th><th>Description</th></tr>`;
+    <table><thead><tr><th>Date/Time</th><th>Description</th></tr></thead><tbody>`;
+  let foundEntries = false;
   all.forEach(([dt,desc])=>{
     if (validDates.includes(dt.split('T')[0])) {
       html += `<tr>
         <td>${new Date(dt).toLocaleString()}</td>
         <td>${desc}</td>
       </tr>`;
+      foundEntries = true;
     }
   });
-  html += `</table>`;
+  if (!foundEntries) {
+    html += `<tr><td colspan="2">No standard schedule entries for the guest's ticket days.</td></tr>`;
+  }
+  html += `</tbody></table>`;
   document.getElementById('standardSchedule').innerHTML = html;
 }
 
 function renderExperienceSchedule(guestId) {
   // 1) figure out which guestTypeId to use:
   //    if this guest has a primaryGuestId, use that primary's guestTypeId
-  const info = db.exec(`
+  const infoRes = db.exec(`
     SELECT guestTypeId, primaryGuestId
       FROM Guest
      WHERE id='${guestId}'
-  `)[0].values[0];
-  let [ownGTypeId, primaryId] = info;
+  `);
+  if (!infoRes.length || !infoRes[0].values.length) {
+      document.getElementById('experienceItinerary').innerHTML = '<h2>Extra Experiences</h2><p>Guest information not found to determine experiences.</p>';
+      return;
+  }
+  let [ownGTypeId, primaryId] = infoRes[0].values[0];
+  
   if (primaryId) {
-    ownGTypeId = db.exec(`
+    const primaryGuestTypeRes = db.exec(`
       SELECT guestTypeId
         FROM Guest
        WHERE id='${primaryId}'
-    `)[0].values[0][0];
+    `);
+    if (primaryGuestTypeRes.length && primaryGuestTypeRes[0].values.length) {
+        ownGTypeId = primaryGuestTypeRes[0].values[0][0];
+    } else {
+        // Fallback or error: Primary guest for +1 not found or has no guest type.
+        // For now, might default to +1's own type or show error.
+        // Sticking with +1's own type if primary's can't be found.
+        console.warn(`Could not find guestTypeId for primary guest ${primaryId}. Using ${guestId}'s own type.`);
+    }
   }
 
   // 2) pull all experiences for that guest-type + ticket validity
-  const rows = db.exec(`
+  const rowsRes = db.exec(`
     SELECT e.dateTime, e.description
       FROM Experience e
       JOIN TicketValidity tv
@@ -394,37 +517,71 @@ function renderExperienceSchedule(guestId) {
          SELECT ticketTypeId FROM Guest WHERE id='${guestId}'
        )
      ORDER BY e.dateTime
-  `)[0]?.values || [];
+  `);
 
-  // 3) render exactly as before
   let html = `<h2>Extra Experiences</h2>
-    <table><tr><th>Date/Time</th><th>Description</th></tr>`;
-  rows.forEach(([dt,desc])=>{
-    html += `<tr>
-      <td>${new Date(dt).toLocaleString()}</td>
-      <td>${desc}</td>
-    </tr>`;
-  });
-  html += `</table>`;
+    <table><thead><tr><th>Date/Time</th><th>Description</th></tr></thead><tbody>`;
+  
+  if (rowsRes.length && rowsRes[0].values.length) {
+    rowsRes[0].values.forEach(([dt,desc])=>{
+      html += `<tr>
+        <td>${new Date(dt).toLocaleString()}</td>
+        <td>${desc}</td>
+      </tr>`;
+    });
+  } else {
+    html += `<tr><td colspan="2">No extra experiences available for this guest type/program on their ticket days.</td></tr>`;
+  }
+  html += `</tbody></table>`;
   document.getElementById('experienceItinerary').innerHTML = html;
 }
 
+
 function populateExperienceFields() {
-  const [desc, dt, gt] = document.getElementById('expTemplate').value.split('|');
+  const templateValue = document.getElementById('expTemplate').value;
+  if (!templateValue) {
+    document.getElementById('expDescription').value = '';
+    document.getElementById('expDateTime').value    = '';
+    if (document.getElementById('expGuestType').options.length > 0) document.getElementById('expGuestType').selectedIndex = 0;
+    return;
+  }
+  const [desc, dt, gt] = templateValue.split('|');
   document.getElementById('expDescription').value = desc || '';
   document.getElementById('expDateTime').value    = dt   || '';
   document.getElementById('expGuestType').value   = gt   || '';
 }
 
 function populateTicketFields() {
-  const [id,name,dates] = document.getElementById('ticketTemplate').value.split('|');
-  document.getElementById('newTicketId').value    = id   || '';
-  document.getElementById('newTicketName').value  = name || '';
-  document.getElementById('newTicketDates').value = dates|| '';
+  const templateValue = document.getElementById('ticketTemplate').value;
+  const capacityField = document.getElementById('newTicketCapacity');
+  if (!templateValue) {
+    document.getElementById('newTicketId').value    = '';
+    document.getElementById('newTicketName').value  = '';
+    document.getElementById('newTicketDates').value = '';
+    capacityField.value = ''; 
+    return;
+  }
+  const parts = templateValue.split('|');
+  document.getElementById('newTicketId').value    = parts[0] || '';
+  document.getElementById('newTicketName').value  = parts[1] || '';
+  document.getElementById('newTicketDates').value = parts[2] || '';
+  capacityField.value = ''; // Clear capacity, as templates don't store it.
 }
 
 function populateGuestFields() {
-  const [id,name,email,ticket,sector,gt,primary] = document.getElementById('guestTemplate').value.split('|');
+  const templateValue = document.getElementById('guestTemplate').value;
+   if (!templateValue) {
+    document.getElementById('newGuestId').value         = '';
+    document.getElementById('newGuestName').value       = '';
+    document.getElementById('newGuestEmail').value      = '';
+    if (document.getElementById('newGuestTicketType').options.length > 0) document.getElementById('newGuestTicketType').selectedIndex = 0;
+    if (document.getElementById('newGuestSector').options.length > 0) document.getElementById('newGuestSector').selectedIndex = 0;
+    if (document.getElementById('newGuestGuestType').options.length > 0) document.getElementById('newGuestGuestType').selectedIndex = 0;
+    document.getElementById('newGuestPrimary').value    = '';
+    renderGuestOptions(''); 
+    return;
+  }
+  const [id,name,email,ticket,sector,gt,primary] = templateValue.split('|');
   document.getElementById('newGuestId').value         = id     || '';
   document.getElementById('newGuestName').value       = name   || '';
   document.getElementById('newGuestEmail').value      = email  || '';
@@ -448,13 +605,25 @@ function populateSectorFields() {
 }
 
 function populateGuestTypeFields() {
-  const [name,opts] = document.getElementById('guestTypeTemplate').value.split('|');
+  const templateValue = document.getElementById('guestTypeTemplate').value;
+  if (!templateValue) {
+    document.getElementById('newGuestTypeName').value    = '';
+    document.getElementById('newGuestTypeOptions').value = '';
+    return;
+  }
+  const [name,opts] = templateValue.split('|');
   document.getElementById('newGuestTypeName').value    = name || '';
   document.getElementById('newGuestTypeOptions').value = opts || '';
 }
 
 function populateScheduleFields() {
-  const [dt, desc] = document.getElementById('stdScheduleTemplate').value.split('|');
+  const templateValue = document.getElementById('stdScheduleTemplate').value;
+  if (!templateValue) {
+    document.getElementById('newScheduleDateTime').value    = '';
+    document.getElementById('newScheduleDescription').value = '';
+    return;
+  }
+  const [dt, desc] = templateValue.split('|');
   document.getElementById('newScheduleDateTime').value    = dt   || '';
   document.getElementById('newScheduleDescription').value = desc || '';
 }
@@ -464,14 +633,27 @@ function addTicketType() {
   if (!id) id = `ticket_${Math.random().toString(36).substr(2,8)}`;
   const name = document.getElementById('newTicketName').value.trim();
   const dates = document.getElementById('newTicketDates').value.trim().split(',').map(d=>d.trim()).filter(Boolean);
+  const capacityInput = document.getElementById('newTicketCapacity').value;
+  const capacity = parseInt(capacityInput, 10);
+
   if (!name || !dates.length) return alert('Ticket name and dates required');
-  db.run(`INSERT INTO TicketType(id,name) VALUES(?,?)`, [id,name]);
-  dates.forEach(d=> db.run(`INSERT INTO TicketValidity(ticketTypeId,date) VALUES(?,?)`, [id,d]));
+  if (isNaN(capacity) || capacity < 0) return alert('Valid capacity is required (non-negative number).');
+
+  try {
+    db.run(`INSERT INTO TicketType(id,name,capacity,remainingCapacity) VALUES(?,?,?,?)`, [id,name,capacity,capacity]);
+    dates.forEach(d=> db.run(`INSERT INTO TicketValidity(ticketTypeId,date) VALUES(?,?)`, [id,d]));
+  } catch (e) {
+    alert(`Error adding ticket type: ${e.message}`);
+    return;
+  }
+  
   renderDropdown('newGuestTicketType','TicketType', true);
-  document.getElementById('ticketTemplate').value   = '';
+  renderTicketCapacitySummary();
+  document.getElementById('ticketTemplate').value   = ''; 
   document.getElementById('newTicketId').value     = '';
   document.getElementById('newTicketName').value   = '';
   document.getElementById('newTicketDates').value  = '';
+  document.getElementById('newTicketCapacity').value = ''; 
 }
 
 function addExperience() {
@@ -479,45 +661,88 @@ function addExperience() {
   const dt   = document.getElementById('expDateTime').value;
   const gt   = document.getElementById('expGuestType').value;
   if (!desc || !dt || !gt) return alert('All fields required');
-  db.run(`INSERT INTO Experience(guestTypeId,dateTime,description) VALUES(?,?,?)`, [gt,dt,desc]);
-  renderExperienceSchedule(document.getElementById('guestSelect').value);
-  document.getElementById('expTemplate').value    = '';
+  try {
+    db.run(`INSERT INTO Experience(guestTypeId,dateTime,description) VALUES(?,?,?)`, [gt,dt,desc]);
+  } catch (e) {
+    alert(`Error adding experience: ${e.message}`);
+    return;
+  }
+  if (document.getElementById('guestSelect').value) {
+      renderExperienceSchedule(document.getElementById('guestSelect').value); 
+  }
+  document.getElementById('expTemplate').value    = ''; 
   document.getElementById('expDescription').value = '';
   document.getElementById('expDateTime').value    = '';
-  document.getElementById('expGuestType').value   = 'guestType01';
+  if (document.getElementById('expGuestType').options.length > 0) document.getElementById('expGuestType').selectedIndex = 0; 
 }
 
 function addGuest() {
-  let id    = document.getElementById('newGuestId').value.trim();
-  if (!id) id = `guest_${Math.random().toString(36).slice(2,8)}`;
-  const name   = document.getElementById('newGuestName').value.trim();
-  const email  = document.getElementById('newGuestEmail').value.trim();
-  const ticket = document.getElementById('newGuestTicketType').value;
-  const sector = document.getElementById('newGuestSector').value;
-  const gt     = document.getElementById('newGuestGuestType').value;
-  const primary= document.getElementById('newGuestPrimary').value.trim() || null;
+  let guestIdVal    = document.getElementById('newGuestId').value.trim();
+  if (!guestIdVal) guestIdVal = `guest_${Math.random().toString(36).slice(2,8)}`;
+  const nameVal   = document.getElementById('newGuestName').value.trim();
+  const emailVal  = document.getElementById('newGuestEmail').value.trim();
+  const ticketTypeIdVal = document.getElementById('newGuestTicketType').value;
+  const sectorIdVal = document.getElementById('newGuestSector').value; 
+  const guestTypeIdStr = document.getElementById('newGuestGuestType').value; 
+  const primaryGuestIdStr = document.getElementById('newGuestPrimary').value.trim() || null; 
+
+  if (!nameVal || !emailVal || !ticketTypeIdVal || !sectorIdVal || !guestTypeIdStr) {
+      return alert('Name, Email, Ticket Type, Sector, and Guest Type are required.');
+  }
+
+  // Check ticket capacity
+  const ticketInfoStmt = db.prepare("SELECT remainingCapacity FROM TicketType WHERE id = ?");
+  ticketInfoStmt.bind([ticketTypeIdVal]);
+  let currentCapacity = -1; 
+  if (ticketInfoStmt.step()) {
+    currentCapacity = ticketInfoStmt.getAsObject().remainingCapacity;
+  }
+  ticketInfoStmt.free();
+
+  if (currentCapacity < 1) { 
+    alert(`Ticket type selected is at full capacity (Remaining: ${currentCapacity > -1 ? currentCapacity : 'N/A'}) or invalid. Cannot add guest.`);
+    return;
+  }
+  
   let optsArr  = [];
-  const row    = db.exec(`SELECT options FROM GuestType WHERE id='${gt}'`);
-  if (row.length) {
-    row[0].values[0][0].split(',').filter(Boolean).forEach(opt=>{
-      const inp = document.getElementById(`opt_${opt}`);
-      if (inp && inp.value.trim()) optsArr.push(`${opt}:${inp.value.trim()}`);
+  const guestTypeOptionsQuery = db.exec(`SELECT options FROM GuestType WHERE id='${guestTypeIdStr}'`);
+  if (guestTypeOptionsQuery.length && guestTypeOptionsQuery[0].values.length && guestTypeOptionsQuery[0].values[0][0]) {
+    const optionsString = guestTypeOptionsQuery[0].values[0][0];
+    optionsString.split(',').filter(Boolean).forEach(optKey => {
+      const optInput = document.getElementById(`opt_${optKey}`);
+      if (optInput && optInput.value.trim()) {
+        optsArr.push(`${optKey}:${optInput.value.trim()}`);
+      }
     });
   }
-  const opts = optsArr.join(',');
-  if (!name || !email || !ticket || !sector || !gt) return alert('All fields required');
-  db.run(`
-    INSERT INTO Guest(id,name,email,ticketTypeId,sectorId,guestTypeId,primaryGuestId,options)
-    VALUES(?,?,?,?,?,?,?,?)
-  `, [id,name,email,ticket,sector,gt,primary,opts]);
-  renderGuestSelect();
-  document.getElementById('guestSelect').value = id;
-  renderGuestUI(id);
+  const optsStr = optsArr.join(',');
+
+  try {
+    db.run(`
+        INSERT INTO Guest(id,name,email,ticketTypeId,sectorId,guestTypeId,primaryGuestId,options)
+        VALUES(?,?,?,?,?,?,?,?)
+    `, [guestIdVal,nameVal,emailVal,ticketTypeIdVal,sectorIdVal,guestTypeIdStr,primaryGuestIdStr,optsStr]);
+
+    db.run("UPDATE TicketType SET remainingCapacity = remainingCapacity - 1 WHERE id = ?", [ticketTypeIdVal]);
+  } catch (e) {
+    alert(`Error adding guest: ${e.message}`);
+    return;
+  }
+
+  renderGuestSelect(); 
+  renderDropdown('newGuestTicketType','TicketType', true); 
+  renderTicketCapacitySummary();
+  
+  document.getElementById('guestSelect').value = guestIdVal; 
+  renderGuestUI(guestIdVal); 
+
   document.getElementById('guestTemplate').value   = '';
   document.getElementById('newGuestId').value      = '';
   document.getElementById('newGuestName').value    = '';
   document.getElementById('newGuestEmail').value   = '';
-  document.getElementById('newGuestSector').value  = '';
+  if (document.getElementById('newGuestTicketType').options.length > 0) document.getElementById('newGuestTicketType').selectedIndex = 0; 
+  if (document.getElementById('newGuestSector').options.length > 0) document.getElementById('newGuestSector').selectedIndex = 0;
+  if (document.getElementById('newGuestGuestType').options.length > 0) document.getElementById('newGuestGuestType').selectedIndex = 0;
   document.getElementById('newGuestPrimary').value = '';
   document.getElementById('newGuestOptionsContainer').innerHTML = '';
 }
@@ -527,9 +752,16 @@ function addGuestType() {
   const opts = document.getElementById('newGuestTypeOptions').value.trim();
   if (!name) return alert('Guest type name required');
   const id = `guestType_${Math.random().toString(36).slice(2,8)}`;
-  db.run(`INSERT INTO GuestType(id,name,options) VALUES(?,?,?)`, [id,name,opts]);
-  renderGuestTypeOptions();
-  renderDropdown('newGuestGuestType','GuestType', true);
+  try {
+    db.run(`INSERT INTO GuestType(id,name,options) VALUES(?,?,?)`, [id,name,opts]);
+  } catch(e) {
+    alert(`Error adding guest type: ${e.message}`);
+    return;
+  }
+  
+  renderGuestTypeOptions(); 
+  renderDropdown('newGuestGuestType','GuestType', true); 
+  
   document.getElementById('guestTypeTemplate').value     = '';
   document.getElementById('newGuestTypeName').value      = '';
   document.getElementById('newGuestTypeOptions').value   = '';
@@ -540,9 +772,16 @@ function addSector() {
   if (!id) id = `sector_${Math.random().toString(36).substr(2,8)}`;
   const name = document.getElementById('newSectorName').value.trim();
   if (!name) return alert('Sector name required');
-  db.run(`INSERT INTO Sector(id,name) VALUES(?,?)`, [id,name]);
+  try {
+    db.run(`INSERT INTO Sector(id,name) VALUES(?,?)`, [id,name]);
+  } catch (e) {
+    alert(`Error adding sector: ${e.message}`);
+    return;
+  }
+
   renderDropdown('newGuestSector','Sector', true);
-  renderDropdown('sectorTemplate','Sector', true, (i,n)=>`${i}|${n}`);
+  renderDropdown('sectorTemplate','Sector', true, (i,n)=>`${i}|${n}`); 
+  
   document.getElementById('sectorTemplate').value   = '';
   document.getElementById('newSectorId').value     = '';
   document.getElementById('newSectorName').value   = '';
@@ -552,8 +791,15 @@ function addStandardSchedule() {
   const dt   = document.getElementById('newScheduleDateTime').value;
   const desc = document.getElementById('newScheduleDescription').value.trim();
   if (!dt || !desc) return alert('Date/time and description required');
-  db.run(`INSERT INTO StandardSchedule(dateTime,description) VALUES(?,?)`, [dt,desc]);
-  renderStandardSchedule(document.getElementById('guestSelect').value);
+  try {
+    db.run(`INSERT INTO StandardSchedule(dateTime,description) VALUES(?,?)`, [dt,desc]);
+  } catch(e) {
+    alert(`Error adding schedule entry: ${e.message}`);
+    return;
+  }
+  if (document.getElementById('guestSelect').value) {
+      renderStandardSchedule(document.getElementById('guestSelect').value); 
+  }
   document.getElementById('stdScheduleTemplate').value     = '';
   document.getElementById('newScheduleDateTime').value     = '';
   document.getElementById('newScheduleDescription').value  = '';
@@ -561,22 +807,16 @@ function addStandardSchedule() {
 
 window.addEventListener('DOMContentLoaded', init);
 
-
-/**
- * Export and download the in-memory SQLite database.
- */
 function downloadDB() {
-  // Export the database to a Uint8Array
   const data = db.export();
-  // Create a Blob and object URL for download
   const blob = new Blob([data], { type: 'application/octet-stream' });
   const url = URL.createObjectURL(blob);
-  // Create a temporary link to trigger download
   const a = document.createElement('a');
   a.href = url;
   a.download = 'itinerary.sqlite';
+  document.body.appendChild(a); 
   a.click();
-  // Clean up the object URL
+  document.body.removeChild(a); 
   URL.revokeObjectURL(url);
 }
 
