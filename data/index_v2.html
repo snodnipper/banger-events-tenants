@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Canadian GP 2025: Guest Itinerary (SQL Powered)</title>
+  <title>Canadian GP 2025: Guest Itinerary (SQL - Full Refactor)</title>
   <!-- The sql.js library is still loaded here as it's a dependency for the script -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.6.2/sql-wasm.js"></script>
   <style>
@@ -58,16 +58,22 @@
   </style>
 </head>
 <body>
-  <h1>Canadian GP 2025: Guest Itinerary (SQL Powered)</h1>
+  <h1>Canadian GP 2025: Guest Itinerary (SQL - Full Refactor)</h1>
 
   <div id="ticketCapacitySummary" class="form-section"></div>
+
+  <div class="form-section">
+    <h3>Standard Grand Prix Schedule</h3>
+    <div id="standardActivitySchedule">
+      <p>The standard schedule for all Grand Prix events will appear here.</p>
+    </div>
+  </div>
 
   <div class="form-section">
     <h3>View Guest Itinerary</h3>
     <label for="invitationSelect">Select Guest (Invitation):</label>
     <select id="invitationSelect"></select>
     <div class="card" id="guestDetails"></div>
-    <div id="standardActivitySchedule"></div>
     <div id="additionalExperienceItinerary"></div>
   </div>
 
@@ -176,6 +182,7 @@
     <label for="newInviteeEmail">Invitee Email:</label>
     <input type="email" id="newInviteeEmail" />
     <label for="newInvitationTicketTypeId">Ticket Type:</label> <select id="newInvitationTicketTypeId"></select>
+    <label for="newInvitationSectorId">Sector:</label> <select id="newInvitationSectorId"></select>
     <label for="newInvitationGuestTypeId">Guest Type:</label> <select id="newInvitationGuestTypeId" onchange="handleNewInvitationGuestTypeChange(this.value)"></select>
     <div id="newInvitationGuestTypeOptionsContainer" class="options-container card">Loading options...</div>
     <label for="newInvitationPrimaryGuestId">Primary Guest's Invitation ID (for +1s, optional):</label> 
