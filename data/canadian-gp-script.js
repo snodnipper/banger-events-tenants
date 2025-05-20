@@ -19,31 +19,24 @@ async function init() {
   db.run(`CREATE TABLE Invitation_Experience(invitationId TEXT, experienceId TEXT, PRIMARY KEY (invitationId, experienceId));`);
 
   // Seed Data (Updated to be as similar to index2.html's data philosophy as possible)
+  
+  // GuestType data
   db.run(`INSERT INTO GuestType VALUES 
-    ('gt_vip','VIP Guest','request_accommodation,request_transport,vip_lounge_access'), 
-    ('gt_gen','General Admission',''), 
-    ('gt_plus1','Companion (+1)','guest_pass_only'),
-    ('gt_press','Press Corps','media_pass,interview_slot,press_room,press_conference'),
-    ('gt_team','Team Member','team_catering,garage_access,team_hospitality'),
-    ('gt_charity','Charity Guest','parking_voucher,meal_ticket,special_tour');`);
+    ('guestType01','VIP','request_accommodation,request_transport'), 
+    ('guestType02','General',''), 
+    ('guestType03','+1','plus_1');`);
 
   // TicketType: IDs from index.html, names/capacities inspired by index2.html where mapped.
   // Remaining capacity calculated based on the invitations below.
-  // tt_3day_pass: used by inv_alice, inv_charlie, inv_frank (3) -> 100 - 3 = 97
-  // tt_sat_qual: used by inv_bob, inv_edward, inv_grace, inv_hank (4) -> 50 - 4 = 46
-  // tt_sun_race: unused by current guest list (0) -> 75 - 0 = 75
-  // tt_fri_prac: used by inv_diana (1) -> 125 - 1 = 124
   db.run(`INSERT INTO TicketType (id, name, capacity, remainingCapacity) VALUES 
-    ('tt_3day_pass','3-Day Pass (13-15 June)', 100, 97), 
-    ('tt_sat_qual','Day 2 Pass (14 June)', 50, 46),
-    ('tt_sun_race','Day 3 Pass (15 June)', 75, 75),
-    ('tt_fri_prac','Friday Practice Pass (13 June)', 125, 124);`);
+  ('ticket01','3-Day Pass (13–15 June)', 100, 98), 
+  ('ticket02','Day 2 Pass (14 June)', 50, 49),
+  ('ticket03','Day 3 Pass (15 June)', 75, 75);`);
 
   db.run(`INSERT INTO TicketValidity VALUES 
-    ('tt_3day_pass','2025-06-13'), ('tt_3day_pass','2025-06-14'), ('tt_3day_pass','2025-06-15'),
-    ('tt_sat_qual','2025-06-14'), 
-    ('tt_sun_race','2025-06-15'), 
-    ('tt_fri_prac','2025-06-13');`);
+  ('ticket01','2025-06-13'), ('ticket01','2025-06-14'), ('ticket01','2025-06-15'),
+  ('ticket02','2025-06-14'), 
+  ('ticket03','2025-06-15');`);
   
   // StandardActivity INSERT (Kept from original index.html as it's comprehensive)
   const standardActivityInserts = [
@@ -91,53 +84,39 @@ async function init() {
 
   // Experience INSERT (Kept from original index.html)
   db.run(`INSERT INTO Experience VALUES 
-    ('exp_meet_greet','Driver Meet & Greet Session','2025-06-13T12:30','Exclusive autograph and photo session with selected F1 drivers'),
-    ('exp_paddock_tour','Paddock Club Tour','2025-06-13T15:40','Guided tour through the exclusive F1 Paddock Club facilities'),
-    ('exp_vip_pit_walk','VIP Pit Lane Walk','2025-06-13T20:00','Exclusive pit lane access for VIP guests with team personnel'),
-    ('exp_hydrotherapy','Hydrotherapy Session','2025-06-14T09:30','Relaxing hydrotherapy session at the circuit spa facility'),
-    ('exp_vip_lunch','VIP Paddock Club Lunch','2025-06-14T13:00','Gourmet lunch prepared by celebrity chef in the Paddock Club'),
-    ('exp_team_photo','Team Photo Session','2025-06-14T14:00','Photo opportunity with team members and car'),
-    ('exp_grid_walk','General Grid Walk','2025-06-15T12:05','Pre-race grid access for selected guests'),
-    ('exp_rooftop_brunch','VIP Rooftop Brunch','2025-06-15T09:00','Exclusive breakfast with panoramic circuit views'),
-    ('exp_plus1_coffee','Guest +1 Morning Coffee','2025-06-15T10:00','Special coffee morning for companion guests'),
-    ('exp_charity_breakfast','Charity Partners Breakfast','2025-06-13T08:30','Special breakfast for charity partners and guests'),
-    ('exp_garage_tour','Team Garage Tour','2025-06-14T10:00','Behind-the-scenes tour of team garages for Press');`);
+    ('exp01','Meet & Greet with Drivers','2025-06-13T12:30','Exclusive autograph and photo session with selected F1 drivers'),
+    ('exp02','Paddock Club Tour','2025-06-13T15:40','Guided tour through the exclusive F1 Paddock Club facilities'),
+    ('exp03','VIP Pit Lane Walk','2025-06-13T20:00','Exclusive pit lane access for VIP guests with team personnel'),
+    ('exp04','Hydrotherapy for +1','2025-06-14T09:15','Relaxing hydrotherapy session at the circuit spa facility'),
+    ('exp05','VIP Paddock Club Lunch','2025-06-14T13:00','Gourmet lunch prepared by celebrity chef in the Paddock Club'),
+    ('exp06','Team Photo Session','2025-06-14T14:00','Photo opportunity with team members and car'),
+    ('exp07','General Grid Walk','2025-06-15T12:05','Pre-race grid access for selected guests'),
+    ('exp08','Rooftop Brunch VIP','2025-06-15T09:00','Exclusive breakfast with panoramic circuit views'),
+    ('exp09','Guest +1 Morning Coffee','2025-06-15T10:00','Special coffee morning for companion guests');`);
+
   
   // GuestType_Experience: Added ('gt_gen', 'exp_paddock_tour') for similarity with index2.html logic.
   db.run(`INSERT INTO GuestType_Experience VALUES 
-    ('gt_vip', 'exp_meet_greet'), 
-    ('gt_vip', 'exp_paddock_tour'), 
-    ('gt_vip', 'exp_vip_pit_walk'),
-    ('gt_vip', 'exp_vip_lunch'),
-    ('gt_vip', 'exp_rooftop_brunch'),
-    ('gt_gen', 'exp_team_photo'),
-    ('gt_gen', 'exp_grid_walk'),
-    ('gt_gen', 'exp_paddock_tour'), /* Added for index2.html similarity */
-    ('gt_plus1', 'exp_hydrotherapy'),
-    ('gt_plus1', 'exp_plus1_coffee'),
-    ('gt_press', 'exp_meet_greet'),
-    ('gt_press', 'exp_garage_tour'),
-    ('gt_team', 'exp_paddock_tour'),
-    ('gt_team', 'exp_team_photo'),
-    ('gt_charity', 'exp_charity_breakfast');`);
+    ('guestType01', 'exp01'), 
+    ('guestType01', 'exp03'),
+    ('guestType01', 'exp05'),
+    ('guestType01', 'exp08'),
+    ('guestType02', 'exp02'), 
+    ('guestType02', 'exp06'),
+    ('guestType02', 'exp07'),
+    ('guestType03', 'exp04'),
+    ('guestType03', 'exp09');`);  
   
   // Invitation Data: Alice, Bob, Charlie updated for index2.html similarity. Others kept from original index.html.
   db.run(`INSERT INTO Invitation (id, name, email, ticketTypeId, guestTypeId, options, primaryGuestId) VALUES 
-    ('inv_alice','Alice Freeman','alice@ukfans.com','tt_3day_pass','gt_vip', 'request_accommodation:Four Seasons,request_transport:Helicopter', NULL), 
-    ('inv_bob','Bob Wang','bob@asiafans.com','tt_sat_qual','gt_gen', NULL, NULL),
-    ('inv_charlie', 'Charlie Guest', 'charlie@ukfans.com', 'tt_3day_pass', 'gt_plus1', 'guest_pass_only', 'inv_alice'),
-    ('inv_diana','Diana Prince','diana@motorsportmedia.com','tt_fri_prac','gt_press','media_pass,interview_slot,press_conference', NULL),
-    ('inv_edward','Edward Nigma','edward@racingteam.com','tt_sat_qual','gt_team','team_catering,garage_access', NULL),
-    ('inv_frank','Frank Johnson','frank@charity.org','tt_3day_pass','gt_charity','parking_voucher,meal_ticket,special_tour', NULL),
-    ('inv_grace','Grace Kim','grace@koreaf1.kr','tt_sat_qual','gt_gen', NULL, NULL),
-    ('inv_hank','Hank Peters','hank@plusone.ca','tt_sat_qual','gt_plus1', 'guest_pass_only', 'inv_grace')
-  `);
+    ('guest01','Alice Freeman','alice@ukfans.com','ticket01','guestType01', 'request_accommodation:Four Seasons,request_transport:Helicopter', NULL), 
+    ('guest02','Bob Wang','bob@asiafans.com','ticket02','guestType02', NULL, NULL),
+    ('guest03','Charlie Guest','charlie@ukfans.com','ticket01','guestType03', 'plus_1', 'guest01');`);
   
   // Adding additional direct experiences to specific invitations (Kept from original index.html)
   db.run(`INSERT INTO Invitation_Experience VALUES 
-    ('inv_bob', 'exp_paddock_tour'), 
-    ('inv_diana', 'exp_vip_lunch'),
-    ('inv_grace', 'exp_meet_greet');`);
+    ('guest02', 'exp02'), 
+    ('guest01', 'exp05');`);
 
   renderAllDropdowns();
   renderTicketCapacitySummary();

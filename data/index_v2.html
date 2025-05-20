@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Canadian GP 2025: Guest Itinerary (SQL - Full Refactor)</title>
+  <title>Canadian GP 2025: Guest Itinerary (SQL Powered)</title>
   <!-- The sql.js library is still loaded here as it's a dependency for the script -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.6.2/sql-wasm.js"></script>
   <style>
@@ -58,7 +58,7 @@
   </style>
 </head>
 <body>
-  <h1>Canadian GP 2025: Guest Itinerary (SQL - Full Refactor)</h1>
+  <h1>Canadian GP 2025: Guest Itinerary (SQL Powered)</h1>
 
   <div id="ticketCapacitySummary" class="form-section"></div>
 
@@ -78,15 +78,16 @@
     <label for="ticketTypeTemplateSelect">Select Example to Populate:</label>
     <select id="ticketTypeTemplateSelect" onchange="populateTicketTypeFields()">
       <option value="">-- Select Ticket Type Example --</option>
-      <option value="tt_3day_pass|3-Day Full Pass|2025-06-13,2025-06-14,2025-06-15|150">3-Day Full Pass</option>
-      <option value="tt_sun_race|Sunday Race Day Pass|2025-06-15|500">Sunday Race Day Pass</option>
+      <option value="ticket01|3-Day Pass (13–15 June)|2025-06-13,2025-06-14,2025-06-15">3-Day Pass (13–15 June)</option>
+      <option value="ticket04|Mixed Day 1 & 3 Pass|2025-06-13,2025-06-15">Mixed Day 1 & 3 Pass</option>
+      <option value="ticket03|Day 3 Pass (15 June)|2025-06-15">Day 3 Pass (15 June)</option>
     </select><br>
     <label for="newTicketTypeId">Ticket Type ID:</label>
-    <input type="text" id="newTicketTypeId" placeholder="e.g., tt_vip_weekend" />
+    <input type="text" id="newTicketTypeId" placeholder="e.g., ticket04" />
     <label for="newTicketTypeName">Ticket Type Name:</label>
-    <input type="text" id="newTicketTypeName" placeholder="e.g., VIP Weekend Pass" />
+    <input type="text" id="newTicketTypeName" placeholder="e.g., Mixed Day 1 & 3 Pass" />
     <label for="newTicketTypeDates">Valid Dates (YYYY-MM-DD, comma-separated):</label>
-    <input type="text" id="newTicketTypeDates" placeholder="2025-06-13,2025-06-14" />
+    <input type="text" id="newTicketTypeDates" placeholder="2025-06-13,2025-06-15" />
     <label for="newTicketTypeCapacity">Capacity:</label>
     <input type="number" id="newTicketTypeCapacity" placeholder="e.g., 100" min="0" /><br>
     <button onclick="addTicketType()">Add Ticket Type</button>
@@ -97,8 +98,11 @@
     <label for="experienceTemplateSelect">Select Example to Populate:</label>
     <select id="experienceTemplateSelect" onchange="populateExperienceFields()">
         <option value="">-- Select Experience Example --</option>
-        <option value="exp_meet_greet_v2|Driver Meet & Greet Session 2|2025-06-14T11:00|Exclusive autograph session">Driver Meet & Greet (14 June, 11:00)</option>
-        <option value="exp_garage_tour|Garage Tour|2025-06-13T16:00|Behind the scenes look at team garages">Garage Tour (13 June, 16:00)</option>
+        <option value="Meet & Greet with Drivers|2025-06-13T12:30|guestType01">Driver Meet & Greet (13 June, 12:30)</option>
+        <option value="Paddock Club Tour|2025-06-13T15:40|guestType02">Paddock Club Tour (13 June, 15:40)</option>
+        <option value="VIP Pit Lane Walk|2025-06-13T20:00|guestType01">Pit Lane Walk (VIP, 13 June, 20:00)</option>
+        <option value="Hydrotherapy for +1|2025-06-14T09:15|guestType03">Hydrotherapy for +1 (14 June, 09:15)</option>
+        <option value="General Grid Walk|2025-06-15T12:05|guestType02">Grid Walk (General, 15 June, 12:05)</option>
     </select><br>
     <label for="newExperienceId">Experience ID:</label>
     <input type="text" id="newExperienceId" placeholder="e.g., exp_hot_lap" />
@@ -116,15 +120,18 @@
     <label for="guestTypeTemplateSelect">Select Example to Populate:</label>
     <select id="guestTypeTemplateSelect" onchange="populateGuestTypeFields()">
         <option value="">-- Select Guest Type Example --</option>
-        <option value="gt_press|Press|media_pass,interview_access,press_room">Press Corps</option>
-        <option value="gt_team|Team Member|team_catering,garage_access">Racing Team Member</option>
+        <option value="guestType04|Big Boss VIP|request_transport,request_accommodation,private_jet">Big Boss VIP</option>
+        <option value="guestType05|Super Supporter|meet_driver,garage_tour">Super Supporter</option>
+        <option value="guestType06|Team Manager|request_transport,private_meeting">Team Manager</option>
+        <option value="guestType07|Press|press_pass,interview_slot">Press</option>
+        <option value="guestType08|Charity Guest|parking,meal_voucher">Charity Guest</option>
     </select><br>
     <label for="newGuestTypeId">Guest Type ID:</label>
-    <input type="text" id="newGuestTypeId" placeholder="e.g., gt_sponsor" />
+    <input type="text" id="newGuestTypeId" placeholder="e.g., guestType04" />
     <label for="newGuestTypeName">Guest Type Name:</label>
-    <input type="text" id="newGuestTypeName" placeholder="e.g., Sponsor Guest" />
-    <label for="newGuestTypeOptions">Perks/Options (comma-separated):</label>
-    <input type="text" id="newGuestTypeOptions" placeholder="e.g., hospitality_tent,parking_a" /><br>
+    <input type="text" id="newGuestTypeName" placeholder="Guest Type Name" />
+    <label for="newGuestTypeOptions">Options (comma-separated):</label>
+    <input type="text" id="newGuestTypeOptions" placeholder="Options (comma-separated)" /><br>
     <button onclick="addGuestType()">Add Guest Type</button>
   </div>
   
@@ -140,8 +147,9 @@
      <label for="standardActivityTemplateSelect">Select Example to Populate:</label>
     <select id="standardActivityTemplateSelect" onchange="populateStandardActivityFields()">
         <option value="">-- Select Standard Activity Example --</option>
-        <option value="2025-06-13T09:00|Circuit Gates Open for VIPs">Circuit Gates Open for VIPs (13 June, 09:00)</option>
-        <option value="2025-06-14T10:00|Support Race Qualifying">Support Race Qualifying (14 June, 10:00)</option>
+        <option value="2025-06-13T21:00|Winner Interview (Post-Race)">Winner Interview (13 June, 21:00)</option>
+        <option value="2025-06-14T20:00|Podium Ceremony">Podium Ceremony (14 June, 20:00)</option>
+        <option value="2025-06-15T15:50|Victory Lap">Victory Lap (15 June, 15:50)</option>
     </select><br>
     <label for="newStdActivityDateTime">Date & Time:</label>
     <input type="datetime-local" id="newStdActivityDateTime" />
@@ -155,11 +163,14 @@
     <label for="invitationTemplateSelect">Select Example to Populate:</label>
      <select id="invitationTemplateSelect" onchange="populateInvitationFields()">
         <option value="">-- Select Invitation Example --</option>
-        <option value="inv_grace|Grace Hopper|grace@navy.mil|tt_3day_pass|gt_vip|request_accommodation:Fairmont,request_transport:Helicopter">Grace Hopper (VIP 3-Day)</option>
-        <option value="inv_alan|Alan Turing|alan@bletchley.uk|tt_sun_race|gt_gen|">Alan Turing (General Sunday)</option>
+        <option value="guest04|Daisy Miller|daisy@example.com|ticket02|sector02|guestType02|">Daisy Miller (General Day 2)</option>
+        <option value="guest05|Eve Adams|eve@example.com|ticket01|sector01|guestType01|">Eve Adams (VIP)</option>
+        <option value="guest06|Frank Lewis|frank@corp.com|ticket01|sector01|guestType01|">Frank Lewis (VIP)</option>
+        <option value="guest07|Grace Chan|grace@asia.com|ticket02|sector02|guestType02|">Grace Chan (General Day 2)</option>
+        <option value="guest08|Hank Brooks|hank@motorsport.com|ticket01|sector01|guestType03|guest05">Hank Brooks (+1 for Eve)</option>
     </select><br>
     <label for="newInvitationId">Invitation ID:</label>
-    <input type="text" id="newInvitationId" placeholder="e.g., inv_john_doe" />
+    <input type="text" id="newInvitationId" placeholder="e.g., guest04" />
     <label for="newInviteeName">Invitee Name:</label>
     <input type="text" id="newInviteeName" />
     <label for="newInviteeEmail">Invitee Email:</label>
@@ -168,7 +179,7 @@
     <label for="newInvitationGuestTypeId">Guest Type:</label> <select id="newInvitationGuestTypeId" onchange="handleNewInvitationGuestTypeChange(this.value)"></select>
     <div id="newInvitationGuestTypeOptionsContainer" class="options-container card">Loading options...</div>
     <label for="newInvitationPrimaryGuestId">Primary Guest's Invitation ID (for +1s, optional):</label> 
-    <input type="text" id="newInvitationPrimaryGuestId" placeholder="e.g., inv_alice (if this is for Charlie)" />
+    <input type="text" id="newInvitationPrimaryGuestId" placeholder="e.g., guest01 (if this is for +1)" />
     <div class="assignments">
       <h4>Assign Additional Specific Experiences (Optional):</h4>
       <div id="newInvitationAdditionalExperiences">Loading experiences...</div>
