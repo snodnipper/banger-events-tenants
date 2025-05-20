@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Canadian GP 2025: Guest Itinerary (SQL - Full Refactor)</title>
+  <!-- The sql.js library is still loaded here as it's a dependency for the script -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.6.2/sql-wasm.js"></script>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif; padding: 2rem; background-color: #f4f7f6; color: #333; }
+    select, input[type="text"], input[type="email"], input[type="number"], input[type="datetime-local"], button { 
+        margin-bottom: 1rem; 
+        padding: 0.75rem; 
+        border-radius: 6px; 
+        border: 1px solid #ccc; 
+        font-size: 1rem;
+        box-sizing: border-box;
+    }
+    input[type="text"], input[type="email"], input[type="number"], input[type="datetime-local"] {
+        width: calc(100% - 1.7rem); /* Adjusted for padding & border */
+    }
+     select {
+        width: 100%;
+         background-color: white;
+    }
+    button { 
+        background-color: #007bff; 
+        color: white; 
+        cursor: pointer; 
+        border: none;
+        transition: background-color 0.2s ease-in-out;
+    }
+    button:hover { background-color: #0056b3; }
+    table { border-collapse: collapse; width: 100%; margin-top: 1rem; margin-bottom: 1.5rem; background-color: white; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+    th, td { border: 1px solid #ddd; padding: 0.75rem; text-align: left; }
+    th { background-color: #e9ecef; font-weight: 600; }
+    h1, h2, h3 { margin-top: 2.5rem; margin-bottom: 1rem; color: #2c3e50; }
+    h1 { font-size: 2rem; text-align: center; border-bottom: 2px solid #007bff; padding-bottom: 0.5rem;}
+    h2 { font-size: 1.5rem; border-bottom: 1px solid #eee; padding-bottom: 0.3rem;}
+    h3 { font-size: 1.25rem; color: #34495e; }
+    .card { margin-top: 1rem; padding: 1.5rem; background: #ffffff; border: 1px solid #e0e0e0; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
+    .options-container div { margin-bottom: 0.5rem; }
+    .options-container label { margin-left: 0.5rem; font-weight: normal; }
+    #ticketCapacitySummary { margin-bottom: 2rem; }
+    .form-section {
+        background-color: #fff;
+        padding: 1.5rem;
+        margin-bottom: 2rem;
+        border-radius: 8px;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+    }
+    .form-section h3 { margin-top: 0; }
+    label { display: block; margin-bottom: 0.3rem; font-weight: 500; color: #495057; }
+    .assignments { margin-top: 1rem; padding: 1rem; border: 1px dashed #ced4da; background-color: #fdfdfd; border-radius: 6px;}
+    .assignments h4 {margin-top: 0; margin-bottom: 0.75rem; color: #34495e;}
+    .assignments div { margin-bottom: 0.25rem;}
+    .assignments label {font-weight: normal;}
+  </style>
+</head>
+<body>
+  <h1>Canadian GP 2025: Guest Itinerary (SQL - Full Refactor)</h1>
+
+  <div id="ticketCapacitySummary" class="form-section"></div>
+
+  <div class="form-section">
+    <h3>View Guest Itinerary</h3>
+    <label for="invitationSelect">Select Guest (Invitation):</label>
+    <select id="invitationSelect"></select>
+    <div class="card" id="guestDetails"></div>
+    <div id="standardActivitySchedule"></div>
+    <div id="additionalExperienceItinerary"></div>
+  </div>
+
+  <h2>Manage Event Data</h2>
+
+  <div class="form-section">
+    <h3>Create New Ticket Type</h3>
+    <label for="ticketTypeTemplateSelect">Select Example to Populate:</label>
+    <select id="ticketTypeTemplateSelect" onchange="populateTicketTypeFields()">
+      <option value="">-- Select Ticket Type Example --</option>
+      <option value="tt_3day_pass|3-Day Full Pass|2025-06-13,2025-06-14,2025-06-15|150">3-Day Full Pass</option>
+      <option value="tt_sun_race|Sunday Race Day Pass|2025-06-15|500">Sunday Race Day Pass</option>
+    </select><br>
+    <label for="newTicketTypeId">Ticket Type ID:</label>
+    <input type="text" id="newTicketTypeId" placeholder="e.g., tt_vip_weekend" />
+    <label for="newTicketTypeName">Ticket Type Name:</label>
+    <input type="text" id="newTicketTypeName" placeholder="e.g., VIP Weekend Pass" />
+    <label for="newTicketTypeDates">Valid Dates (YYYY-MM-DD, comma-separated):</label>
+    <input type="text" id="newTicketTypeDates" placeholder="2025-06-13,2025-06-14" />
+    <label for="newTicketTypeCapacity">Capacity:</label>
+    <input type="number" id="newTicketTypeCapacity" placeholder="e.g., 100" min="0" /><br>
+    <button onclick="addTicketType()">Add Ticket Type</button>
+  </div>
+
+  <div class="form-section">
+    <h3>Create New Experience</h3>
+    <label for="experienceTemplateSelect">Select Example to Populate:</label>
+    <select id="experienceTemplateSelect" onchange="populateExperienceFields()">
+        <option value="">-- Select Experience Example --</option>
+        <option value="exp_meet_greet_v2|Driver Meet & Greet Session 2|2025-06-14T11:00|Exclusive autograph session">Driver Meet & Greet (14 June, 11:00)</option>
+        <option value="exp_garage_tour|Garage Tour|2025-06-13T16:00|Behind the scenes look at team garages">Garage Tour (13 June, 16:00)</option>
+    </select><br>
+    <label for="newExperienceId">Experience ID:</label>
+    <input type="text" id="newExperienceId" placeholder="e.g., exp_hot_lap" />
+    <label for="newExperienceName">Experience Name:</label>
+    <input type="text" id="newExperienceName" placeholder="e.g., Passenger Hot Lap" />
+    <label for="newExperienceDateTime">Date & Time:</label>
+    <input type="datetime-local" id="newExperienceDateTime" />
+    <label for="newExperienceDescription">Description:</label>
+    <input type="text" id="newExperienceDescription" placeholder="Details about the experience" /><br>
+    <button onclick="addExperience()">Add Experience</button>
+  </div>
+
+  <div class="form-section">
+    <h3>Create New Guest Type</h3>
+    <label for="guestTypeTemplateSelect">Select Example to Populate:</label>
+    <select id="guestTypeTemplateSelect" onchange="populateGuestTypeFields()">
+        <option value="">-- Select Guest Type Example --</option>
+        <option value="gt_press|Press|media_pass,interview_access,press_room">Press Corps</option>
+        <option value="gt_team|Team Member|team_catering,garage_access">Racing Team Member</option>
+    </select><br>
+    <label for="newGuestTypeId">Guest Type ID:</label>
+    <input type="text" id="newGuestTypeId" placeholder="e.g., gt_sponsor" />
+    <label for="newGuestTypeName">Guest Type Name:</label>
+    <input type="text" id="newGuestTypeName" placeholder="e.g., Sponsor Guest" />
+    <label for="newGuestTypeOptions">Perks/Options (comma-separated):</label>
+    <input type="text" id="newGuestTypeOptions" placeholder="e.g., hospitality_tent,parking_a" /><br>
+    <button onclick="addGuestType()">Add Guest Type</button>
+  </div>
+  
+  <div class="form-section">
+    <h3>Assign Experience to Guest Type</h3>
+    <label for="assignExpGuestType">Guest Type:</label> <select id="assignExpGuestType"></select>
+    <label for="assignExpExperience">Experience:</label> <select id="assignExpExperience"></select><br>
+    <button onclick="assignExperienceToGuestType()">Assign Experience to Guest Type</button>
+  </div>
+
+  <div class="form-section">
+    <h3>Create New Standard Activity</h3>
+     <label for="standardActivityTemplateSelect">Select Example to Populate:</label>
+    <select id="standardActivityTemplateSelect" onchange="populateStandardActivityFields()">
+        <option value="">-- Select Standard Activity Example --</option>
+        <option value="2025-06-13T09:00|Circuit Gates Open for VIPs">Circuit Gates Open for VIPs (13 June, 09:00)</option>
+        <option value="2025-06-14T10:00|Support Race Qualifying">Support Race Qualifying (14 June, 10:00)</option>
+    </select><br>
+    <label for="newStdActivityDateTime">Date & Time:</label>
+    <input type="datetime-local" id="newStdActivityDateTime" />
+    <label for="newStdActivityDescription">Activity Description:</label>
+    <input type="text" id="newStdActivityDescription" placeholder="e.g., F1 Final Practice Session" /><br>
+    <button onclick="addStandardActivity()">Add Standard Activity</button>
+  </div>
+
+  <div class="form-section">
+    <h3>Create New Invitation</h3>
+    <label for="invitationTemplateSelect">Select Example to Populate:</label>
+     <select id="invitationTemplateSelect" onchange="populateInvitationFields()">
+        <option value="">-- Select Invitation Example --</option>
+        <option value="inv_grace|Grace Hopper|grace@navy.mil|tt_3day_pass|gt_vip|request_accommodation:Fairmont,request_transport:Helicopter">Grace Hopper (VIP 3-Day)</option>
+        <option value="inv_alan|Alan Turing|alan@bletchley.uk|tt_sun_race|gt_gen|">Alan Turing (General Sunday)</option>
+    </select><br>
+    <label for="newInvitationId">Invitation ID:</label>
+    <input type="text" id="newInvitationId" placeholder="e.g., inv_john_doe" />
+    <label for="newInviteeName">Invitee Name:</label>
+    <input type="text" id="newInviteeName" />
+    <label for="newInviteeEmail">Invitee Email:</label>
+    <input type="email" id="newInviteeEmail" />
+    <label for="newInvitationTicketTypeId">Ticket Type:</label> <select id="newInvitationTicketTypeId"></select>
+    <label for="newInvitationGuestTypeId">Guest Type:</label> <select id="newInvitationGuestTypeId" onchange="handleNewInvitationGuestTypeChange(this.value)"></select>
+    <div id="newInvitationGuestTypeOptionsContainer" class="options-container card">Loading options...</div>
+    <label for="newInvitationPrimaryGuestId">Primary Guest's Invitation ID (for +1s, optional):</label> 
+    <input type="text" id="newInvitationPrimaryGuestId" placeholder="e.g., inv_alice (if this is for Charlie)" />
+    <div class="assignments">
+      <h4>Assign Additional Specific Experiences (Optional):</h4>
+      <div id="newInvitationAdditionalExperiences">Loading experiences...</div>
+    </div>
+    <button onclick="addInvitation()">Add Invitation</button>
+  </div>
+
+  <div class="form-section">
+    <h2>Download Database</h2>
+    <button onclick="downloadDB()">Download SQLite DB</button>
+  </div>
+
+  <script src="canadian-gp-script.js"></script>
+</body>
+</html>
